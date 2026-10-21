@@ -325,7 +325,7 @@
   function showEmpathy(note, source) {
     $("empathyBox").classList.remove("hidden");
     $("empathyText").textContent = note;
-    $("sourceNote").textContent = source === "groq" ? "Slicing: AI (Groq) · You can export or re-slice anytime." : "Slicing: offline fallback (no API key) — still fully working.";
+    $("sourceNote").textContent = source === "groq" ? "Slicing: AI (Groq) · You can export or re-slice anytime." : "Slicing: offline fallback — still fully working (no key needed).";
     applyBionic();
   }
 
