@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SingleStep — One tiny step at a time</title>
+<meta name="description" content="SingleStep turns overwhelming brain dumps into one tiny actionable card at a time. Accessible, neuro-inclusive, zero-login.">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/lucide@latest"></script>
+<script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+<style>
+  body[data-theme="sage"] { --bg:#1F2A24; --card:#2C3E35; --text:#E9EFE8; --muted:#B9C6B8; --accent:#A8C3A0; --danger:#FF8A80; --border:#3E554A; }
+  body[data-theme="paper"] { --bg:#F5EEDD; --card:#FFF9EA; --text:#3B2F2F; --muted:#7A6A5E; --accent:#8B5E3C; --danger:#C0392B; --border:#D8C9A8; }
+  body[data-theme="aaa"] { --bg:#000000; --card:#000000; --text:#FFFFFF; --muted:#DDDDDD; --accent:#FFFF00; --danger:#FF0000; --border:#FFFF00; }
+  body { background:var(--bg); color:var(--text); }
+  body.dyslexia, body.dyslexia p, body.dyslexia h1, body.dyslexia h2, body.dyslexia button, body.dyslexia textarea {
+    font-family: Verdana, Geneva, Tahoma, sans-serif !important; letter-spacing:.05em; word-spacing:.12em; line-height:1.9 !important;
+  }
+  .ss-card { background:var(--card); border:2px solid var(--border); border-radius:1rem; }
+  .ss-btn { border:2px solid var(--border); border-radius:.75rem; padding:.7rem 1rem; font-weight:600; min-height:48px; cursor:pointer; background:var(--card); color:var(--text); }
+  .ss-btn.primary { background:var(--accent); color:#111; border-color:var(--border); }
+  body[data-theme="paper"] .ss-btn.primary { color:#fff; }
+  .ss-btn:focus-visible, textarea:focus-visible, select:focus-visible { outline:4px solid var(--accent); outline-offset:2px; }
+  .ss-input { background:var(--card); border:2px solid var(--border); color:var(--text); border-radius:.75rem; width:100%; padding:.8rem; }
+  .energy-btn.active, .persona-btn.active { background:var(--accent); color:#111; }
+  @keyframes breathe { 0%,100% { transform:scale(1); } 50% { transform:scale(1.05); } }
+  .breathe { animation:breathe 4s ease-in-out infinite; transform-origin:center; }
+  @media (prefers-reduced-motion: reduce) { .breathe { animation:none; } }
+  .old-item { border:1px solid var(--danger); border-radius:.5rem; padding:.4rem .6rem; margin:.3rem 0; }
+  .dock { position:fixed; left:0; right:0; bottom:0; z-index:50; background:var(--card); border-top:2px solid var(--border); }
+  .sr-only { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0,0,0,0); }
+</style>
+</head>
+<body data-theme="sage" class="min-h-screen pb-32">
+<div class="max-w-3xl mx-auto px-4 py-6">
+
+  <header class="text-center mb-6">
+    <h1 class="text-4xl font-extrabold">SingleStep</h1>
+    <p class="mt-2" style="color:var(--muted)">One tiny step at a time. Your list is hidden on purpose — only the next small move is shown.</p>
+    <div class="flex gap-2 justify-center mt-4">
+      <button type="button" class="ss-btn" id="exportBtn">⬇ Export session (JSON)</button>
+      <label class="ss-btn cursor-pointer" for="importInput">⬆ Import session</label>
+      <input type="file" id="importInput" accept="application/json" class="sr-only">
+    </div>
+  </header>
+
+  <!-- 1. Persona demos -->
+  <section class="ss-card p-4 mb-4" aria-labelledby="persona-heading">
+    <h2 id="persona-heading" class="text-xl font-bold mb-2">Try instantly — pick a person</h2>
+    <p class="text-sm mb-3" style="color:var(--muted)">Judges: one tap loads a messy brain dump and starts slicing. No typing needed.</p>
+    <div class="grid sm:grid-cols-3 gap-2">
+      <button type="button" class="ss-btn persona-btn" data-persona="maya">🎓 Maya (ADHD Student)</button>
+      <button type="button" class="ss-btn persona-btn" data-persona="alex">💻 Alex (Burned-Out Dev)</button>
+      <button type="button" class="ss-btn persona-btn" data-persona="sam">🏠 Sam (Sensory Overload)</button>
+    </div>
+  </section>
+
+  <!-- 2. Brain dump + voice + energy -->
+  <section class="ss-card p-4 mb-4" aria-labelledby="dump-heading">
+    <h2 id="dump-heading" class="text-xl font-bold mb-2">What is overwhelming you right now?</h2>
+    <textarea id="dumpInput" rows="4" class="ss-input" placeholder="Ramble freely. Messy is perfect — SingleStep will sort it out. Example: I have a paper due, my room is a mess, and I forgot three bills…"></textarea>
+    <div class="flex flex-wrap gap-2 mt-3 items-center">
+      <button type="button" class="ss-btn" id="micBtn">🎤 Speak instead</button>
+      <span id="micNote" class="text-sm" style="color:var(--muted)"></span>
+    </div>
+    <p class="mt-4 mb-2 font-semibold">How much battery do you have right now?</p>
+    <div class="grid grid-cols-3 gap-2" role="group" aria-label="Energy level">
+      <button type="button" class="ss-btn energy-btn" data-energy="low">🪫 10% — Survival</button>
+      <button type="button" class="ss-btn energy-btn active" data-energy="medium">🔋 50% — Steady</button>
+      <button type="button" class="ss-btn energy-btn" data-energy="high">⚡ 90% — Flow</button>
+    </div>
+    <p class="text-sm mt-2" style="color:var(--muted)">Survival = 1–2 min ultra-baby steps · Steady = 5 min micro-steps · Flow = 10–15 min structured steps.</p>
+    <button type="button" class="ss-btn primary w-full mt-4" id="decomposeBtn">✨ Slice it into tiny steps</button>
+    <p id="decomposeLoading" class="text-sm mt-2 hidden" style="color:var(--muted)">Slicing your overwhelm into tiny steps…</p>
+    <p id="decomposeError" class="text-sm mt-2 hidden" style="color:var(--danger)"></p>
+  </section>
+
+  <!-- Empathy note -->
+  <section id="empathyBox" class="ss-card p-4 mb-4 hidden" aria-live="polite">
+    <p id="empathyText" class="italic"></p>
+    <p id="sourceNote" class="text-sm mt-2" style="color:var(--muted)"></p>
+  </section>
+
+  <!-- 3. Blindfold single-card arena -->
+  <section id="arena" class="ss-card p-5 mb-4 hidden" aria-labelledby="arena-heading">
+    <h2 id="arena-heading" class="text-xl font-bold mb-3">Focus arena — just this one step</h2>
+    <div class="flex items-center gap-4">
+      <div class="breathe shrink-0" aria-hidden="true">
+        <svg width="96" height="96" viewBox="0 0 120 120">
+          <circle cx="60" cy="60" r="54" fill="none" stroke="var(--border)" stroke-width="8"></circle>
+          <circle id="ringFg" cx="60" cy="60" r="54" fill="none" stroke="var(--accent)" stroke-width="8" stroke-linecap="round" stroke-dasharray="339.29" stroke-dashoffset="339.29" transform="rotate(-90 60 60)"></circle>
+        </svg>
+      </div>
+      <div>
+        <p id="stepCounter" class="font-bold"></p>
+        <p id="streakText" class="text-sm" style="color:var(--muted)"></p>
+        <label class="text-sm flex items-center gap-2 mt-1"><input type="checkbox" id="elapsedToggle"> Show gentle elapsed time</label>
+        <p id="elapsedText" class="text-sm hidden" style="color:var(--muted)">Elapsed on this step: 0:00</p>
+      </div>
+    </div>
+    <h3 id="stepTitle" class="text-2xl font-bold mt-4"></h3>
+    <p id="stepMeta" class="text-sm mt-1" style="color:var(--muted)"></p>
+    <p id="stepTip" class="mt-3"></p>
+    <p id="sliceNote" class="text-sm mt-2 hidden" style="color:var(--muted)"></p>
+    <div class="grid sm:grid-cols-2 gap-2 mt-4">
+      <button type="button" class="ss-btn primary" id="doneBtn">✅ Done — Next Step</button>
+      <button type="button" class="ss-btn" id="sliceBtn">🔨 Still Too Hard — Slice Smaller</button>
+      <button type="button" class="ss-btn" id="swapBtn">🎲 Swap for Easier Step</button>
+      <button type="button" class="ss-btn" id="aloudBtn">🔊 Read Aloud</button>
+    </div>
+    <label class="text-sm flex items-center gap-2 mt-3"><input type="checkbox" id="voiceToggle"> Voice mode — say “Done”, “Smaller”, “Next” or “Swap” hands-free</label>
+    <p id="voiceNote" class="text-sm" style="color:var(--muted)"></p>
+    <div class="flex gap-2 mt-4">
+      <button type="button" class="ss-btn" id="restartBtn">↩ Start over with a new dump</button>
+    </div>
+    <div id="completionBox" class="hidden mt-4">
+      <p id="completionText" class="font-bold text-lg"></p>
+    </div>
+  </section>
+
+  <!-- 4. Compare toggle -->
+  <section class="mb-4">
+    <button type="button" class="ss-btn primary w-full" id="compareToggle">👁️ Compare: Traditional To-Do vs. SingleStep Calm View</button>
+    <div id="compareSection" class="hidden mt-4 grid md:grid-cols-2 gap-4">
+      <div class="ss-card p-4">
+        <h3 class="font-bold mb-1">The Old Way — Overwhelming List</h3>
+        <p class="text-sm mb-2" style="color:var(--danger)">Estimated Cognitive Load: 94% (High Paralysis Risk) — illustrative estimate</p>
+        <ul id="oldList" class="text-sm"></ul>
+      </div>
+      <div class="ss-card p-4">
+        <h3 class="font-bold mb-1">The SingleStep Way — Calm Focus</h3>
+        <p class="text-sm mb-2" style="color:var(--muted)">Estimated Cognitive Load: 14% (Actionable Now) — illustrative estimate</p>
+        <p class="text-sm mb-1">🛡️ Queue hidden to protect your focus.</p>
+        <p id="calmMiniTitle" class="font-bold"></p>
+        <p id="calmMiniMeta" class="text-sm" style="color:var(--muted)"></p>
+      </div>
+    </div>
+  </section>
+
+  <p class="text-sm text-center" style="color:var(--muted)">Your data stays in this browser. No account, no server storage. Export anytime.</p>
+</div>
+
+<!-- 5. Accessibility & sensory dock -->
+<div class="dock">
+  <div class="max-w-3xl mx-auto px-4 py-3 flex flex-wrap gap-2 items-center justify-center">
+    <button type="button" class="ss-btn" id="bionicToggle" aria-pressed="false">Bionic reading: off</button>
+    <button type="button" class="ss-btn" id="dyslexiaToggle" aria-pressed="false">Dyslexia-friendly: off</button>
+    <label class="text-sm font-semibold" for="themeSelect">Theme:</label>
+    <select id="themeSelect" class="ss-input" style="width:auto">
+      <option value="sage" selected>Calm Sage</option>
+      <option value="paper">Warm Paper</option>
+      <option value="aaa">High-Contrast AAA</option>
+    </select>
+    <label class="text-sm font-semibold" for="soundSelect">Soundscape:</label>
+    <select id="soundSelect" class="ss-input" style="width:auto">
+      <option value="off" selected>Off</option>
+      <option value="brown">Brown noise</option>
+      <option value="rain">Soft rain</option>
+    </select>
+  </div>
+</div>
+
+<div id="announcer" class="sr-only" aria-live="polite"></div>
+
+<script>
+(function () {
+  "use strict";
+  var $ = function (id) { return document.getElementById(id); };
+  var PERSONAS = {
+    maya: "I have a 12-page research paper on climate policy due tomorrow, 40 unread PDFs, my desk is a mess, and I'm panicking and can't start.",
+    alex: "Production authentication bug is blocking release, 9 PRs waiting for review, Slack is blowing up, and I haven't written the post-mortem yet.",
+    sam: "My room is buried in laundry, dishes are piled up, I forgot to pay the electricity bill, and I need to pack for tomorrow's morning train."
+  };
+  var CALM_TIPS = [
+    "Ugly first drafts count. You can fix it later — you just need to start.",
+    "Set a timer if it helps. When it rings, you are allowed to stop.",
+    "Done is better than perfect. One tiny win beats a perfect plan.",
+    "If your brain protests, make the step smaller, not the goal bigger.",
+    "Breathe once, slowly, before you begin. Then just the first motion.",
+    "You do not have to finish this. You only have to begin it.",
+    "Put your phone face-down for this one step. The world can wait.",
+    "If it feels hard, that means it matters — not that you are failing."
+  ];
+  var PHYSICAL_VERBS = ["open","grab","write","read","put","pick","move","wash","fold","pack","call","send","type","list","sort","clear","wipe","set","start","take","check","draft","save","close","stand","sit","drink","breathe","plug","charge","search","create","make","pay"];
+  var state = { steps: [], currentIndex: 0, traditional: [], brainDump: "", energy: "medium", persona: "", sliceDepth: {}, streak: 0, bionic: false, dyslexia: false, theme: "sage" };
+  var elapsedSec = 0, elapsedTimer = null, audioCtx = null, soundNodes = null, recognition = null, voiceModeOn = false, voiceRestartTimer = null;
+
+  function announce(msg) { $("announcer").textContent = msg; }
+  function saveSession() { try { localStorage.setItem("singlestep-session-v1", JSON.stringify(state)); } catch (e) {} }
+  function loadSession() {
+    try {
+      var s = JSON.parse(localStorage.getItem("singlestep-session-v1") || "null");
+      if (s && typeof s === "object") { for (var k in s) { if (k in state) state[k] = s[k]; } }
+      var today = new Date().toISOString().slice(0, 10);
+      var st = JSON.parse(localStorage.getItem("singlestep-streak-v1") || "null");
+      state.streak = (st && st.date === today) ? st.count : 0;
+    } catch (e) {}
+  }
+  function saveStreak() { try { localStorage.setItem("singlestep-streak-v1", JSON.stringify({ date: new Date().toISOString().slice(0, 10), count: state.streak })); } catch (e) {} }
+  function icons() { try { if (window.lucide) window.lucide.createIcons(); } catch (e) {} }
+
+  /* ---------- client-side fallback (used only if the Flask backend is unreachable) ---------- */
+  function clean(t) { return (t || "").replace(/\s+/g, " ").trim(); }
+  function splitChunks(text, cap) {
+    cap = cap || 8;
+    text = clean(text); if (!text) return [];
+    var parts = [];
+    text.split(/[\n\r]+/).forEach(function (line) {
+      line.split(/(?<=[.!?])\s+/).forEach(function (s) { s = s.replace(/^[,;: ]+|[,;: ]+$/g, ""); if (s) parts.push(s); });
+    });
+    var chunks = [];
+    parts.forEach(function (part) {
+      if (part.length > 70) {
+        part.split(/\s*;\s*|\s*,\s+and\s+|\s+and\s+|\s*,\s+/).forEach(function (sub) { sub = sub.replace(/^and\s+/i, "").replace(/^[,;: ]+|[,;: ]+$/g, ""); if (sub.length >= 3) chunks.push(sub); });
+      } else chunks.push(part);
+    });
+    var seen = {}, out = [];
+    chunks.forEach(function (c) { var k = c.toLowerCase(); if (!seen[k] && c.length >= 3) { seen[k] = true; out.push(c); } });
+    return out.slice(0, cap);
+  }
+  function physicalTitle(raw) {
+    raw = clean(raw).replace(/\.$/, ""); if (!raw) return "Take one slow breath and begin";
+    var low = raw.toLowerCase();
+    if (/(panic|panicking|anxious|anxiety|overwhelm|overwhelmed|stressed|burnout|frozen|can't start|cannot start|don't know where to start)/.test(low)) return "Take one slow breath and name the smallest first move";
+    var clear = low.match(/^(?:my\s+)?(.+?)\s+(?:is|are)\s+(?:a\s+mess|buried|piled up)/);
+    if (clear) return "Clear the " + clear[1];
+    var rest = raw.replace(/^(i have|i need|i must|i am|i'm|i haven't|i have not|i forgot to|i forgot)\s+/i, "");
+    rest = rest.replace(/^to\s+/i, "");
+    rest = rest.replace(/^(written|done|finished)\s+/i, "");
+    rest = rest.replace(/\s+yet$/i, "");
+    if (!rest) return "Take one slow breath and begin";
+    var words = rest.split(" ");
+    if (PHYSICAL_VERBS.indexOf(words[0].toLowerCase().replace(/,/g, "")) !== -1 && words.length > 1) return rest.charAt(0).toUpperCase() + rest.slice(1);
+    var verb = "Start";
+    if (/(paper|essay|write|draft|report|post-mortem|email|doc|thesis)/.test(low)) verb = "Write";
+    else if (/(bug|code|pr|review|repo|auth|release|slack|deploy|test)/.test(low)) verb = "Open";
+    else if (/(room|laundry|dishes|desk|pack|clean|clothes|mess|buried)/.test(low)) verb = "Grab";
+    else if (/(bill|pay|electricity|train|ticket)/.test(low)) verb = "Open";
+    else if (/(pdf|read|research)/.test(low)) verb = "Read";
+    return verb + " " + rest.charAt(0).toLowerCase() + rest.slice(1);
+  }
+  function fallbackDecompose(dump, energy) {
+    var chunks = splitChunks(dump); if (!chunks.length) chunks = ["take one small step on the task in front of you"];
+    var durations = energy === "low" ? [1, 2] : (energy === "high" ? [10, 15] : [5]);
+    var steps = chunks.map(function (c, i) {
+      var title = physicalTitle(c);
+      if (title.length > 110) { var cut = title.slice(0, 110).split(" ").slice(0, -1).join(" "); title = cut || title.slice(0, 110); }
+      return { id: "step-" + (i + 1), title: title, duration_minutes: durations[i % durations.length], energy: (energy === "high" ? "Medium" : "Low"), tip: CALM_TIPS[i % CALM_TIPS.length] };
+    });
+    var seenTitles = {}, uniqueSteps = [];
+    steps.forEach(function (s) { var k = s.title.toLowerCase(); if (!seenTitles[k]) { seenTitles[k] = true; uniqueSteps.push(s); } });
+    steps = uniqueSteps;
+    var traditional = splitChunks(dump, 15);
+    var empathy = energy === "low"
+      ? "This feels huge because a lot of separate things arrived at once. We will take them one 1-minute step at a time — nothing more is asked of you."
+      : (energy === "high"
+        ? "You are carrying a full load, and it makes sense that it feels heavy. We will turn it into clear, structured steps you can move through in flow."
+        : "It is completely normal for a pile like this to freeze anyone. We will make each next move so small it is hard not to start.");
+    return { empathy_note: empathy, traditional_cluttered_list: traditional.slice(0, 15), steps: steps, source: "heuristic-fallback" };
+  }
+  function fallbackSlice(title) {
+    var m = title.match(/^(\w+)\s+(.*)$/);
+    var verb = "Do", obj = title;
+    if (m && PHYSICAL_VERBS.indexOf(m[1].toLowerCase()) !== -1) { verb = m[1].charAt(0).toUpperCase() + m[1].slice(1); obj = m[2]; }
+    if (obj.indexOf(" and ") !== -1) obj = obj.split(" and ")[0];
+    if (obj.length > 45) { var c = obj.slice(0, 45).split(" ").slice(0, -1).join(" "); obj = c || obj.slice(0, 45); }
+    return { substeps: [
+      { id: "sub-1", title: "Get ready: put " + obj + " in front of you", duration_minutes: 1, energy: "Low", tip: "No doing yet. Just set the stage — that alone counts as progress." },
+      { id: "sub-2", title: verb + " the first tiny part of " + obj, duration_minutes: 1, energy: "Low", tip: "Only 60 seconds. When the minute ends, you may stop with zero guilt." },
+      { id: "sub-3", title: "Stop, take one slow breath, and mark this tiny win done", duration_minutes: 1, energy: "Low", tip: "A finished baby step rewires the day. Let yourself feel it." }
+    ], source: "heuristic-fallback" };
+  }
+
+  /* ---------- API ---------- */
+  function api(path, body) {
+    return fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+      .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); });
+  }
+  function currentStep() { return state.steps[state.currentIndex] || null; }
+  function setButtonsEnabled(on) { ["doneBtn", "sliceBtn", "swapBtn", "aloudBtn"].forEach(function (id) { $(id).disabled = !on; }); }
+
+  function renderArena() {
+    var step = currentStep();
+    $("arena").classList.remove("hidden");
+    $("completionBox").classList.add("hidden");
+    setButtonsEnabled(true);
+    if (!step) {
+      $("stepTitle").textContent = "🎉 All steps done!";
+      $("stepMeta").textContent = "";
+      $("stepTip").textContent = "You turned overwhelm into finished steps, one tiny win at a time.";
+      $("stepCounter").textContent = "Complete — " + state.steps.length + " of " + state.steps.length + " steps done";
+      setButtonsEnabled(false);
+      return;
+    }
+    var hidden = state.steps.length - state.currentIndex - 1;
+    $("stepCounter").textContent = "Step " + (state.currentIndex + 1) + " of " + state.steps.length + (hidden > 0 ? " (" + hidden + " hidden to protect your focus)" : "");
+    $("stepTitle").textContent = step.title;
+    $("stepMeta").textContent = "⏱ ~" + step.duration_minutes + " mins · Energy: " + step.energy + " cognitive load";
+    $("stepTip").textContent = step.tip || "";
+    $("streakText").textContent = state.streak > 0 ? "🔥 Streak: " + state.streak + " tiny wins today" : "No wins yet today — your first tiny step is waiting.";
+    var circ = 339.29, done = state.currentIndex, total = state.steps.length || 1;
+    $("ringFg").style.strokeDashoffset = String(circ * (1 - done / total));
+    $("sliceNote").classList.add("hidden");
+    elapsedSec = 0; updateElapsed();
+    applyBionic();
+    renderCalmMini();
+    saveSession();
+  }
+  function renderCalmMini() {
+    var step = currentStep();
+    $("calmMiniTitle").textContent = step ? step.title : "All steps done — calmly.";
+    $("calmMiniMeta").textContent = step ? ("~" + step.duration_minutes + " mins · " + step.energy + " load · queue hidden") : "";
+  }
+  function renderCompare() {
+    var list = $("oldList"); list.innerHTML = "";
+    state.traditional.forEach(function (item) {
+      var li = document.createElement("li"); li.className = "old-item";
+      li.innerHTML = ""; li.appendChild(document.createTextNode(item + " "));
+      var badge = document.createElement("span"); badge.style.color = "var(--danger)"; badge.style.fontWeight = "700"; badge.textContent = "OVERDUE";
+      li.appendChild(badge); list.appendChild(li);
+    });
+    if (!state.traditional.length) { var li2 = document.createElement("li"); li2.textContent = "Your old list appears here after slicing."; list.appendChild(li2); }
+    renderCalmMini();
+  }
+  function showEmpathy(note, source) {
+    $("empathyBox").classList.remove("hidden");
+    $("empathyText").textContent = note;
+    $("sourceNote").textContent = source === "groq" ? "Slicing: AI (Groq) · You can export or re-slice anytime." : "Slicing: offline fallback (no API key) — still fully working.";
+    applyBionic();
+  }
+
+  function decompose() {
+    var dump = $("dumpInput").value.trim();
+    if (!dump) { $("decomposeError").textContent = "Please type or speak what's on your mind first — messy is perfect."; $("decomposeError").classList.remove("hidden"); $("dumpInput").focus(); return; }
+    $("decomposeError").classList.add("hidden");
+    $("decomposeLoading").classList.remove("hidden");
+    $("decomposeBtn").disabled = true;
+    state.brainDump = dump;
+    api("/api/decompose", { brain_dump: dump, energy_level: state.energy, persona: state.persona })
+      .then(function (data) { finishDecompose(data); })
+      .catch(function () { finishDecompose(fallbackDecompose(dump, state.energy)); });
+  }
+  function finishDecompose(data) {
+    $("decomposeLoading").classList.add("hidden");
+    $("decomposeBtn").disabled = false;
+    if (!data.steps || !data.steps.length) { $("decomposeError").textContent = "Slicing failed. Please try again with a slightly longer description."; $("decomposeError").classList.remove("hidden"); return; }
+    state.steps = data.steps; state.currentIndex = 0; state.sliceDepth = {}; state.traditional = data.traditional_cluttered_list || [];
+    showEmpathy(data.empathy_note || "One tiny step at a time.", data.source || "heuristic-fallback");
+    renderArena(); renderCompare(); saveSession();
+    $("arena").scrollIntoView({ behavior: "smooth", block: "start" });
+    announce("Sliced into " + state.steps.length + " tiny steps. Showing only step 1.");
+  }
+
+  function chime() {
+    try {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === "suspended") audioCtx.resume();
+      var osc = audioCtx.createOscillator(), gain = audioCtx.createGain();
+      osc.type = "sine"; osc.frequency.value = 880;
+      gain.gain.setValueAtTime(0.0001, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.12, audioCtx.currentTime + 0.05);
+      gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.45);
+      osc.connect(gain); gain.connect(audioCtx.destination);
+      osc.start(); osc.stop(audioCtx.currentTime + 0.5);
+    } catch (e) {}
+  }
+  function burst(big) {
+    try {
+      if (window.confetti) window.confetti({ particleCount: big ? 120 : 40, spread: big ? 90 : 60, origin: { y: 0.7 }, scalar: 0.9, disableForReducedMotion: true });
+    } catch (e) {}
+  }
+  function doneNext() {
+    if (!currentStep()) return;
+    state.streak++; saveStreak();
+    chime(); burst(false);
+    state.currentIndex++;
+    if (state.currentIndex >= state.steps.length) {
+      renderArena();
+      $("completionBox").classList.remove("hidden");
+      $("completionText").textContent = "🎉 You did it — " + state.steps.length + " tiny steps finished. Streak: " + state.streak + " wins today.";
+      burst(true); announce("All steps done. Streak: " + state.streak);
+    } else { renderArena(); announce("Next step."); }
+    saveSession();
+  }
+  function sliceSmaller() {
+    var step = currentStep(); if (!step) return;
+    var depth = state.sliceDepth[step.id] || 0;
+    if (depth >= 2) { $("sliceNote").textContent = "This is already as tiny as it gets — just do the first 60 seconds of it."; $("sliceNote").classList.remove("hidden"); return; }
+    $("sliceBtn").disabled = true;
+    api("/api/slice-smaller", { step_title: step.title, context: state.brainDump })
+      .then(function (data) { finishSlice(data); })
+      .catch(function () { finishSlice(fallbackSlice(step.title)); });
+  }
+  function finishSlice(data) {
+    $("sliceBtn").disabled = false;
+    var step = currentStep(); if (!step || !data.substeps || data.substeps.length !== 3) return;
+    var parentDepth = state.sliceDepth[step.id] || 0;
+    var subs = data.substeps.map(function (s, i) {
+      var sub = { id: step.id + "-sub" + (i + 1), title: s.title, duration_minutes: 1, energy: "Low", tip: s.tip || CALM_TIPS[i % CALM_TIPS.length] };
+      state.sliceDepth[sub.id] = parentDepth + 1;
+      return sub;
+    });
+    state.steps.splice.apply(state.steps, [state.currentIndex, 1].concat(subs));
+    renderArena(); announce("Sliced into 3 even tinier steps.");
+    saveSession();
+  }
+  function swapEasier() {
+    if (state.currentIndex >= state.steps.length - 1) { $("sliceNote").textContent = "No easier step left — you are already on the easiest one."; $("sliceNote").classList.remove("hidden"); return; }
+    var rank = { Low: 0, Medium: 1, High: 2 };
+    var best = -1, bestScore = 1e9;
+    for (var i = state.currentIndex + 1; i < state.steps.length; i++) {
+      var score = (rank[state.steps[i].energy] || 0) * 100 + (state.steps[i].duration_minutes || 5);
+      if (score < bestScore) { bestScore = score; best = i; }
+    }
+    if (best === -1) return;
+    var tmp = state.steps[state.currentIndex];
+    state.steps[state.currentIndex] = state.steps[best];
+    state.steps[best] = tmp;
+    renderArena(); announce("Swapped for an easier step.");
+    saveSession();
+  }
+  function readAloud() {
+    try {
+      if (!("speechSynthesis" in window)) { $("voiceNote").textContent = "Read-aloud is not supported in this browser — the buttons still work fully."; return; }
+      window.speechSynthesis.cancel();
+      var step = currentStep(); if (!step) return;
+      var u = new SpeechSynthesisUtterance(step.title + ". " + (step.tip || ""));
+      u.rate = 0.95; window.speechSynthesis.speak(u);
+    } catch (e) {}
+  }
+
+  /* ---------- voice mode ---------- */
+  function speechRecognitionCtor() { return window.SpeechRecognition || window.webkitSpeechRecognition || null; }
+  function startVoiceLoop() {
+    var Ctor = speechRecognitionCtor();
+    if (!Ctor) { $("voiceNote").textContent = "Voice mode needs Chrome with a microphone. All buttons still work."; $("voiceToggle").checked = false; voiceModeOn = false; return; }
+    try {
+      recognition = new Ctor();
+      recognition.lang = "en-US"; recognition.interimResults = false; recognition.maxAlternatives = 1;
+      recognition.onresult = function (e) {
+        var said = (e.results[0][0].transcript || "").toLowerCase();
+        if (said.indexOf("done") !== -1 || said.indexOf("next") !== -1) doneNext();
+        else if (said.indexOf("smaller") !== -1 || said.indexOf("harder") !== -1) sliceSmaller();
+        else if (said.indexOf("swap") !== -1 || said.indexOf("easier") !== -1) swapEasier();
+      };
+      recognition.onerror = function (e) {
+        if (e.error === "not-allowed" || e.error === "service-not-allowed") {
+          $("voiceNote").textContent = "Microphone permission was blocked — voice mode is off. Buttons still work.";
+          $("voiceToggle").checked = false; voiceModeOn = false;
+        }
+      };
+      recognition.onend = function () {
+        if (voiceModeOn) { clearTimeout(voiceRestartTimer); voiceRestartTimer = setTimeout(function () { try { recognition.start(); } catch (e) {} }, 300); }
+      };
+      recognition.start();
+      $("voiceNote").textContent = "Listening… say “Done”, “Smaller”, “Next” or “Swap”.";
+    } catch (e) { $("voiceNote").textContent = "Voice mode could not start here — buttons still work."; }
+  }
+  function stopVoiceLoop() {
+    voiceModeOn = false; clearTimeout(voiceRestartTimer);
+    try { if (recognition) recognition.stop(); } catch (e) {}
+    $("voiceNote").textContent = "";
+  }
+  function micInput() {
+    var Ctor = speechRecognitionCtor();
+    if (!Ctor) { $("micNote").textContent = "Voice input needs Chrome with a microphone. Typing works fine."; return; }
+    try {
+      var r = new Ctor();
+      r.lang = "en-US"; r.interimResults = false;
+      $("micNote").textContent = "Listening… speak now.";
+      r.onresult = function (e) {
+        var t = e.results[0][0].transcript || "";
+        var box = $("dumpInput");
+        box.value = box.value ? (box.value.trim() + " " + t) : t;
+        $("micNote").textContent = "Heard it — edit freely, then slice.";
+      };
+      r.onerror = function () { $("micNote").textContent = "Could not hear that — please try again or type instead."; };
+      r.onend = function () { if (!$("micNote").textContent) $("micNote").textContent = ""; };
+      r.start();
+    } catch (e) { $("micNote").textContent = "Voice input could not start — typing works fine."; }
+  }
+
+  /* ---------- bionic reading / dyslexia / themes / soundscapes ---------- */
+  function escapeHtml(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+  function bionicHTML(text) {
+    return escapeHtml(text).split(" ").map(function (word) {
+      var m = word.match(/^(\W*)(\w+)(\W*)$/);
+      if (!m) return word;
+      var core = m[2], half = Math.max(1, Math.ceil(core.length / 2));
+      return m[1] + "<b>" + core.slice(0, half) + "</b>" + core.slice(half) + m[3];
+    }).join(" ");
+  }
+  function applyBionic() {
+    [["stepTitle"], ["stepTip"], ["empathyText"]].forEach(function (pair) {
+      var el = $(pair[0]); if (!el) return;
+      // Refresh every time: textContent always returns plain text even when
+      // <b> tags are present, so this keeps step changes correct. (Old code
+      // only set orig once, which froze every later step to the first title.)
+      el.dataset.orig = el.textContent;
+      el.innerHTML = state.bionic ? bionicHTML(el.dataset.orig) : escapeHtml(el.dataset.orig);
+    });
+  }
+  function stopSound() {
+    try {
+      if (soundNodes) { soundNodes.forEach(function (n) { try { n.stop ? n.stop() : n.disconnect(); } catch (e) {} }); }
+    } catch (e) {}
+    soundNodes = null;
+  }
+  function noiseBuffer(ctx, brown) {
+    var len = ctx.sampleRate * 2, buf = ctx.createBuffer(1, len, ctx.sampleRate), data = buf.getChannelData(0), last = 0;
+    for (var i = 0; i < len; i++) {
+      var white = Math.random() * 2 - 1;
+      if (brown) { last = (last + 0.02 * white) / 1.02; data[i] = last * 3.5; }
+      else data[i] = white;
+    }
+    return buf;
+  }
+  function startSound(kind) {
+    stopSound();
+    if (kind === "off") return;
+    try {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === "suspended") audioCtx.resume();
+      var src = audioCtx.createBufferSource();
+      src.buffer = noiseBuffer(audioCtx, kind === "brown");
+      src.loop = true;
+      var filter = audioCtx.createBiquadFilter();
+      if (kind === "brown") { filter.type = "lowpass"; filter.frequency.value = 400; }
+      else { filter.type = "bandpass"; filter.frequency.value = 900; filter.Q.value = 0.4; }
+      var gain = audioCtx.createGain();
+      gain.gain.value = kind === "brown" ? 0.08 : 0.05;
+      src.connect(filter); filter.connect(gain); gain.connect(audioCtx.destination);
+      src.start(); soundNodes = [src];
+    } catch (e) {}
+  }
+
+  /* ---------- elapsed timer ---------- */
+  function updateElapsed() { $("elapsedText").textContent = "Elapsed on this step: " + Math.floor(elapsedSec / 60) + ":" + ("0" + (elapsedSec % 60)).slice(-2); }
+  function tickElapsed() { if ($("elapsedToggle").checked && !$("arena").classList.contains("hidden")) { elapsedSec++; updateElapsed(); } }
+
+  /* ---------- export / import ---------- */
+  function exportSession() {
+    var payload = { version: 1, brainDump: state.brainDump, energy: state.energy, persona: state.persona, steps: state.steps, currentIndex: state.currentIndex, traditional: state.traditional, streak: state.streak, exportedAt: new Date().toISOString() };
+    var blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    var a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "singlestep-session.json"; a.click(); URL.revokeObjectURL(a.href);
+    announce("Session exported.");
+  }
+  function importSession(file) {
+    var reader = new FileReader();
+    reader.onload = function () {
+      try {
+        var data = JSON.parse(reader.result);
+        if (!data || !Array.isArray(data.steps) || !data.steps.length || !data.steps[0].title) throw new Error("bad file");
+        state.brainDump = data.brainDump || ""; state.energy = data.energy || "medium"; state.persona = data.persona || "";
+        state.steps = data.steps; state.currentIndex = Math.min(data.currentIndex || 0, data.steps.length - 1);
+        state.traditional = data.traditional || []; state.sliceDepth = {};
+        $("dumpInput").value = state.brainDump;
+        showEmpathy("Imported session — welcome back. One tiny step at a time.", "heuristic-fallback");
+        renderArena(); renderCompare(); saveSession();
+        announce("Session imported.");
+      } catch (e) { announce("That file could not be imported. Please choose a SingleStep session JSON file."); }
+    };
+    reader.readAsText(file);
+  }
+
+  /* ---------- wiring ---------- */
+  document.querySelectorAll(".persona-btn").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var key = btn.getAttribute("data-persona");
+      document.querySelectorAll(".persona-btn").forEach(function (b) { b.classList.remove("active"); });
+      btn.classList.add("active");
+      state.persona = key;
+      $("dumpInput").value = PERSONAS[key];
+      decompose();
+    });
+  });
+  document.querySelectorAll(".energy-btn").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      document.querySelectorAll(".energy-btn").forEach(function (b) { b.classList.remove("active"); });
+      btn.classList.add("active");
+      state.energy = btn.getAttribute("data-energy");
+      saveSession();
+    });
+  });
+  $("decomposeBtn").addEventListener("click", function () { state.persona = state.persona || ""; decompose(); });
+  $("doneBtn").addEventListener("click", doneNext);
+  $("sliceBtn").addEventListener("click", sliceSmaller);
+  $("swapBtn").addEventListener("click", swapEasier);
+  $("aloudBtn").addEventListener("click", readAloud);
+  $("voiceToggle").addEventListener("change", function () {
+    voiceModeOn = $("voiceToggle").checked;
+    if (voiceModeOn) startVoiceLoop(); else stopVoiceLoop();
+  });
+  $("micBtn").addEventListener("click", micInput);
+  $("restartBtn").addEventListener("click", function () {
+    stopVoiceLoop(); $("voiceToggle").checked = false;
+    state.steps = []; state.currentIndex = 0; state.traditional = []; state.sliceDepth = {}; state.persona = "";
+    document.querySelectorAll(".persona-btn").forEach(function (b) { b.classList.remove("active"); });
+    $("arena").classList.add("hidden"); $("empathyBox").classList.add("hidden"); $("compareSection").classList.add("hidden");
+    saveSession(); announce("Started over. Type a new brain dump when ready."); $("dumpInput").focus();
+  });
+  $("compareToggle").addEventListener("click", function () {
+    $("compareSection").classList.toggle("hidden");
+    if (!$("compareSection").classList.contains("hidden")) renderCompare();
+  });
+  $("bionicToggle").addEventListener("click", function () {
+    state.bionic = !state.bionic;
+    $("bionicToggle").textContent = "Bionic reading: " + (state.bionic ? "on" : "off");
+    $("bionicToggle").setAttribute("aria-pressed", state.bionic ? "true" : "false");
+    applyBionic(); saveSession();
+  });
+  $("dyslexiaToggle").addEventListener("click", function () {
+    state.dyslexia = !state.dyslexia;
+    document.body.classList.toggle("dyslexia", state.dyslexia);
+    $("dyslexiaToggle").textContent = "Dyslexia-friendly: " + (state.dyslexia ? "on" : "off");
+    $("dyslexiaToggle").setAttribute("aria-pressed", state.dyslexia ? "true" : "false");
+    saveSession();
+  });
+  $("themeSelect").addEventListener("change", function () {
+    state.theme = $("themeSelect").value;
+    document.body.setAttribute("data-theme", state.theme);
+    saveSession();
+  });
+  $("soundSelect").addEventListener("change", function () { startSound($("soundSelect").value); });
+  $("elapsedToggle").addEventListener("change", function () {
+    $("elapsedText").classList.toggle("hidden", !$("elapsedToggle").checked);
+    if ($("elapsedToggle").checked) updateElapsed();
+  });
+  $("exportBtn").addEventListener("click", exportSession);
+  $("importInput").addEventListener("change", function () { if ($("importInput").files[0]) importSession($("importInput").files[0]); $("importInput").value = ""; });
+
+  /* ---------- init ---------- */
+  loadSession();
+  document.body.setAttribute("data-theme", state.theme || "sage");
+  $("themeSelect").value = state.theme || "sage";
+  document.body.classList.toggle("dyslexia", !!state.dyslexia);
+  $("dyslexiaToggle").textContent = "Dyslexia-friendly: " + (state.dyslexia ? "on" : "off");
+  $("bionicToggle").textContent = "Bionic reading: " + (state.bionic ? "on" : "off");
+  if (state.brainDump) $("dumpInput").value = state.brainDump;
+  if (state.steps && state.steps.length) { renderArena(); renderCompare(); }
+  setInterval(tickElapsed, 1000);
+  icons();
+})();
+</script>
+</body>
+</html>
